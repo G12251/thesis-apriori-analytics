@@ -30,13 +30,13 @@ function App() {
 
     try {
       const res = await axios.get(
-        `http://localhost:5000/insights?top=${topN}&month=${month}&confidence=${confidence}&factor=${factor}`,
+        `http://localhost:5001/insights?top=${topN}&month=${month}&confidence=${confidence}&factor=${factor}`,
       );
 
       setInsights(res.data.insights || []);
 
       // STATS
-      const statsRes = await axios.get("http://localhost:5000/stats");
+      const statsRes = await axios.get("http://localhost:5001/stats");
 
       const labelMap = {
         SAL: "Salary",
@@ -54,7 +54,7 @@ function App() {
       setStats(statsArr);
 
       // TRENDS
-      const trendRes = await axios.get("http://localhost:5000/trends");
+      const trendRes = await axios.get("http://localhost:5001/trends");
 
       const cleanTrend = (trendRes.data || []).map((t) => ({
         month: `M${t.month}`,
@@ -72,7 +72,7 @@ function App() {
 
   const downloadPDF = async () => {
     const res = await axios.get(
-      `http://localhost:5000/report?top=${topN}&month=${month}`,
+      `http://localhost:5001/report?top=${topN}&month=${month}`,
       { responseType: "blob" },
     );
 

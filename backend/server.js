@@ -11,20 +11,34 @@ app.use(express.json());
 
 /* ---------------- HELPERS ---------------- */
 
+// Map numeric Likert values (1-5) to Low/Medium/High
 function mapLikert(value) {
-  if (!value) return "Medium";
-
-  value = value.toLowerCase().trim();
-
-  if (value.includes("strongly disagree")) return "Low";
-  if (value.includes("disagree")) return "Low";
-
-  if (value.includes("strongly agree")) return "High";
-  if (value.includes("agree")) return "High";
-
-  if (value.includes("neutral")) return "Medium";
-
+  const num = parseInt(value);
+  if (isNaN(num)) return "Medium";
+  if (num <= 2) return "Low";
+  if (num >= 4) return "High";
   return "Medium";
+}
+
+// Cache for column name lookups
+let _columnMap = null;
+
+function buildColumnMap(headers) {
+  const map = {};
+  headers.forEach((h) => {
+    const prefix = h.match(/^(SAL|CD|JA|LS|OE|JS)\d+/)?.[0];
+    if (prefix) map[prefix] = h;
+  });
+  return map;
+}
+
+function col(d, prefix, columnMap) {
+  const key = columnMap[prefix];
+  if (!key) {
+    console.warn(`Column prefix not found: ${prefix}`);
+    return undefined;
+  }
+  return d[key];
 }
 
 /* ---------------- GET DATA ---------------- */
@@ -37,6 +51,11 @@ async function getData() {
       columns: true,
       skip_empty_lines: true,
     });
+
+    if (!_columnMap && parsed.length > 0) {
+      _columnMap = buildColumnMap(Object.keys(parsed[0]));
+      console.log("📋 Column map:", _columnMap);
+    }
 
     console.log("✅ Data rows:", parsed.length);
 
@@ -57,13 +76,6 @@ function getSupport(transactions, itemset) {
   return count / transactions.length;
 }
 
-function hashItemset(itemset, size = 50) {
-  return itemset
-    .join("-")
-    .split("")
-    .reduce((a, c) => a + c.charCodeAt(0), 0) % size;
-}
-
 function generateCandidates(prev, k) {
   const candidates = [];
 
@@ -82,31 +94,11 @@ function generateCandidates(prev, k) {
   return candidates;
 }
 
-function hashPrune(candidates, transactions, minSupport) {
-  const buckets = {};
-
-  transactions.forEach((t) => {
-    for (let i = 0; i < t.length; i++) {
-      for (let j = i + 1; j < t.length; j++) {
-        const h = hashItemset([t[i], t[j]]);
-        buckets[h] = (buckets[h] || 0) + 1;
-      }
-    }
-  });
-
-  return candidates.filter((c) => {
-    const h = hashItemset(c);
-    return (buckets[h] || 0) / transactions.length >= minSupport;
-  });
-}
-
-function reduceTransactions(transactions, frequentSets) {
-  return transactions.filter((t) =>
-    frequentSets.some((f) => f.every((i) => t.includes(i)))
+// ---- FIXED: Cap max itemset size to prevent exponential explosion ----
+function runApriori(transactions, minSupport = 0.2, maxK = 3) {
+  console.log(
+    `📊 Apriori: ${transactions.length} transactions, minSupport=${minSupport}, maxK=${maxK}`
   );
-}
-
-function runApriori(transactions, minSupport = 0.2) {
   let results = [];
   let k = 1;
 
@@ -119,15 +111,20 @@ function runApriori(transactions, minSupport = 0.2) {
     .filter((i) => counts[i] / transactions.length >= minSupport)
     .map((i) => [i]);
 
+  console.log(`  k=1: ${L.length} frequent items`);
+
   L.forEach((i) =>
     results.push({ items: i, support: getSupport(transactions, i) })
   );
 
-  while (L.length) {
+  while (L.length && k < maxK) {
     k++;
+    const t0 = Date.now();
 
     let candidates = generateCandidates(L, k);
-    candidates = hashPrune(candidates, transactions, minSupport);
+    console.log(
+      `  k=${k}: ${candidates.length} candidates (${Date.now() - t0}ms)`
+    );
 
     let newL = [];
 
@@ -139,10 +136,13 @@ function runApriori(transactions, minSupport = 0.2) {
       }
     });
 
-    transactions = reduceTransactions(transactions, newL);
+    console.log(
+      `  k=${k}: ${newL.length} frequent (${Date.now() - t0}ms)`
+    );
     L = newL;
   }
 
+  console.log(`✅ Apriori done. Total frequent itemsets: ${results.length}`);
   return results;
 }
 
@@ -201,30 +201,33 @@ async function generateInsights(topN, month, minConf, factor) {
     );
   }
 
+  const columnMap = _columnMap;
+
   const transactions = data.map((d) => [
     ...Array.from({ length: 4 }, (_, i) =>
-      "SAL" + (i + 1) + "_" + mapLikert(d[`SAL${i + 1}`])
+      "SAL" + (i + 1) + "_" + mapLikert(col(d, `SAL${i + 1}`, columnMap))
     ),
     ...Array.from({ length: 4 }, (_, i) =>
-      "CD" + (i + 1) + "_" + mapLikert(d[`CD${i + 1}`])
+      "CD" + (i + 1) + "_" + mapLikert(col(d, `CD${i + 1}`, columnMap))
     ),
     ...Array.from({ length: 4 }, (_, i) =>
-      "JA" + (i + 1) + "_" + mapLikert(d[`JA${i + 1}`])
+      "JA" + (i + 1) + "_" + mapLikert(col(d, `JA${i + 1}`, columnMap))
     ),
     ...Array.from({ length: 4 }, (_, i) =>
-      "LS" + (i + 1) + "_" + mapLikert(d[`LS${i + 1}`])
+      "LS" + (i + 1) + "_" + mapLikert(col(d, `LS${i + 1}`, columnMap))
     ),
     ...Array.from({ length: 4 }, (_, i) =>
-      "OE" + (i + 1) + "_" + mapLikert(d[`OE${i + 1}`])
+      "OE" + (i + 1) + "_" + mapLikert(col(d, `OE${i + 1}`, columnMap))
     ),
     ...Array.from({ length: 4 }, (_, i) =>
-      "JS" + (i + 1) + "_" + mapLikert(d[`JS${i + 1}`])
+      "JS" + (i + 1) + "_" + mapLikert(col(d, `JS${i + 1}`, columnMap))
     ),
   ]);
 
-  console.log("Sample:", transactions[0]);
+  console.log("Sample transaction:", transactions[0]);
+  console.log("Unique items:", new Set(transactions.flat()).size);
 
-  const frequent = runApriori(transactions);
+  const frequent = runApriori(transactions, 0.2, 3);
   let rules = generateRules(frequent, minConf);
 
   rules = rules.filter((r) =>
@@ -270,7 +273,6 @@ app.get("/insights", async (req, res) => {
     });
 
     res.json({ insights: explained });
-
   } catch (err) {
     console.error("🔥 ERROR:", err);
     res.status(500).json({ error: "Internal server error" });
@@ -280,6 +282,7 @@ app.get("/insights", async (req, res) => {
 app.get("/stats", async (req, res) => {
   try {
     const data = await getData();
+    const columnMap = _columnMap;
 
     const counts = { SAL: 0, CD: 0, JA: 0, LS: 0, OE: 0 };
     let total = 0;
@@ -287,7 +290,7 @@ app.get("/stats", async (req, res) => {
     data.forEach((d) => {
       ["SAL", "CD", "JA", "LS", "OE"].forEach((key) => {
         for (let i = 1; i <= 4; i++) {
-          if (mapLikert(d[`${key}${i}`]) === "Low") {
+          if (mapLikert(col(d, `${key}${i}`, columnMap)) === "Low") {
             counts[key]++;
           }
           total++;
@@ -309,6 +312,7 @@ app.get("/stats", async (req, res) => {
 app.get("/trends", async (req, res) => {
   try {
     const data = await getData();
+    const columnMap = _columnMap;
 
     const monthly = {};
 
@@ -320,7 +324,7 @@ app.get("/trends", async (req, res) => {
       }
 
       for (let i = 1; i <= 4; i++) {
-        if (mapLikert(d[`JS${i}`]) === "Low") {
+        if (mapLikert(col(d, `JS${i}`, columnMap)) === "Low") {
           monthly[month].low++;
         }
         monthly[month].total++;
@@ -329,8 +333,7 @@ app.get("/trends", async (req, res) => {
 
     const result = Object.keys(monthly).map((m) => ({
       month: m,
-      dissatisfaction:
-        (monthly[m].low / monthly[m].total) * 100,
+      dissatisfaction: (monthly[m].low / monthly[m].total) * 100,
     }));
 
     res.json(result);
@@ -339,14 +342,17 @@ app.get("/trends", async (req, res) => {
   }
 });
 
-
 app.get("/report", (req, res) => {
   res.send("Report endpoint working");
 });
 
-
 /* ---------------- START ---------------- */
 
-app.listen(5000, "0.0.0.0", () => {
-  console.log("🚀 Server running on http://localhost:5000");
+const PORT = process.env.PORT || 5001;
+app.listen(PORT, "0.0.0.0", (err) => {
+  if (err) {
+    console.error("❌ Failed to start server:", err.message);
+    process.exit(1);
+  }
+  console.log(`🚀 Server running on http://localhost:${PORT}`);
 });

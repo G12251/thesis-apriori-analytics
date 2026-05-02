@@ -16,7 +16,7 @@ export default function Survey() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    await axios.post("http://localhost:5000/submit", form);
+    await axios.post("http://localhost:5001/submit", form);
 
     alert("Submitted!");
   };
@@ -61,7 +61,7 @@ export default function Survey() {
 
 <button
   onClick={() =>
-    window.open(`http://localhost:5000/report?top=${topN}`)
+    window.open(`http://localhost:5001/report?top=${topN}`)
   }
 >
   Download Report

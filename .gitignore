@@ -1,0 +1,15 @@
+# Dependencies
+backend/node_modules/
+frontend/node_modules/
+
+# Environment variables
+backend/.env
+
+# Testing
+coverage/
+
+# Production builds
+frontend/build/
+
+# Misc
+.DS_Store
