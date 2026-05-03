@@ -108,7 +108,7 @@ function generateCandidates(prev, k) {
   return candidates;
 }
 
-function runApriori(transactions, minSupport = 0.15) {
+function runApriori(transactions, minSupport = 0.15, maxItemsetSize = 3, maxCandidates = 500) {
   let results = [];
 
   // Count single items
@@ -132,8 +132,19 @@ function runApriori(transactions, minSupport = 0.15) {
 
   while (L.length > 0) {
     k++;
-    // NOTE: Do NOT reduce transactions here — that was the original bug
+
+    // Guard 1: stop before generating candidates if max size reached
+    if (k > maxItemsetSize) break;
+
     let candidates = generateCandidates(L, k);
+
+    // Guard 2: stop if candidate explosion detected
+    if (candidates.length > maxCandidates) {
+      console.warn(
+        `Apriori stopped at k=${k}: candidate count (${candidates.length}) exceeded limit (${maxCandidates})`
+      );
+      break;
+    }
 
     let newL = [];
 
@@ -146,9 +157,6 @@ function runApriori(transactions, minSupport = 0.15) {
     });
 
     L = newL;
-
-    // Safety cap to avoid infinite loops on large datasets
-    if (k > 6) break;
   }
 
   return results;
