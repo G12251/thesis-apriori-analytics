@@ -1,5 +1,7 @@
 require("dotenv").config();
 
+const PORT = process.env.PORT || 3001;
+
 const express = require("express");
 const cors = require("cors");
 const axios = require("axios");
@@ -108,7 +110,7 @@ function generateCandidates(prev, k) {
   return candidates;
 }
 
-function runApriori(transactions, minSupport = 0.15) {
+function runApriori(transactions, minSupport = 0.15, maxItemsetSize = 3, maxCandidates = 500) {
   let results = [];
 
   // Count single items
@@ -132,8 +134,19 @@ function runApriori(transactions, minSupport = 0.15) {
 
   while (L.length > 0) {
     k++;
-    // NOTE: Do NOT reduce transactions here — that was the original bug
+
+    // Guard 1: stop before generating candidates if max size reached
+    if (k > maxItemsetSize) break;
+
     let candidates = generateCandidates(L, k);
+
+    // Guard 2: stop if candidate explosion detected
+    if (candidates.length > maxCandidates) {
+      console.warn(
+        `Apriori stopped at k=${k}: candidate count (${candidates.length}) exceeded limit (${maxCandidates})`
+      );
+      break;
+    }
 
     let newL = [];
 
@@ -146,9 +159,6 @@ function runApriori(transactions, minSupport = 0.15) {
     });
 
     L = newL;
-
-    // Safety cap to avoid infinite loops on large datasets
-    if (k > 6) break;
   }
 
   return results;
@@ -447,6 +457,6 @@ app.get("/report", async (req, res) => {
 });
 
 /* ---------------- START ---------------- */
-app.listen(3001, "0.0.0.0", () => {
-  console.log("🚀 Server running on http://localhost:3001");
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`🚀 Server running on http://localhost:${PORT}`);
 });
